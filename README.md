@@ -7,7 +7,7 @@ The task is to pack a set of items of different size into bins of
 fixed size in such way that minimal number bins is used.
 
 The genetic algorithm used to solve this problem is heavily influenced
-by paper [1] from the references. 
+by paper [2] from the references. 
 
 References from:
 [1] https://www.macs.hw.ac.uk/~dwcorne/Teaching/falkenauer96hybrid.pdf

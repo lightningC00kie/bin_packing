@@ -1,25 +1,36 @@
 using Random
 
 # define a structure for an item
-struct Item
+mutable struct Item
     id::Int
     size::Float64
 end
 
-# define a structure for a bin
-struct Bin
+mutable struct Bin
     capacity::Int
     items::Vector{Item}
 end
 
+function repr(bin::Bin)
+    println("Bin contents:")
+    for item in bin.items
+        println(item.id, ": ", item.size)
+    end
+end
+
+# define a function that returns the remaining space in a given bin
+function fill(bin::Bin)
+    return bin.capacity - sum([item.size for item in bin.items])
+end
+
 # define a function to generate random items
-function generate_items(num_items, max_size)
+function generate_items(num_items)
     items = []
     for i in 1:num_items
         # items with size >= 0.5 have occur 10% of the time
         # otherwise the optimal solution is almost always the number
         # of bins it takes to fit all the items of size >= 0.5
-        if rand() <= 0.1  
+        if rand() <= 0.1
             item = Item(i, rand(5:10)/10)
         else
             item = Item(i, rand(1:4)/10)
@@ -87,6 +98,9 @@ end
 # next_fit algorithm to fit items in the given bins
 function next_fit(bins, items, capacity)
     index = 1        
+    if length(bins) == 0
+        push!(bins, Bin(capacity, []))
+    end
     for item in items
         bin = bins[index]
         if item.size <= fill(bin)
@@ -102,53 +116,6 @@ function next_fit(bins, items, capacity)
         end
     end
     return bins
-end
-
-function validate_capacities(bins)
-    return all([bin.capacity >= sum([item.size for item in bin.items]) for bin in bins])
-end
-
-# define a function that returns the remaining space in a given bin
-function fill(bin::Bin)
-    return bin.capacity - sum([item.size for item in bin.items])
-end
-
-#
-function fitness2(solution)
-    required_bins = 0
-    total_fill = 0
-    total_fill_deviation = 0
-    e = 0.04
-    p = 0
-    for bin in solution
-        if length(bin.items) > 0
-            required_bins += 1
-            total_fill += fill(bin)
-            if fill(bin) > e
-                p += 1
-            end
-        end
-    end
-
-    a = total_fill / required_bins
-
-    for bin in solution
-        if length(bin.items) > 0
-            total_fill_deviation += abs(fill(bin) - a)
-        end
-    end
-
-    b = total_fill_deviation / required_bins
-
-    d = (p/required_bins) * e
-
-    f = 1 - (a + b + d)
-    if f > 1
-        println("a: ", a)
-        println("b: ", b)
-        println("d: ", d)
-    end
-    return f
 end
 
 # function create_chromosome(items, indices)
@@ -181,7 +148,7 @@ function genetic_algorithm(items, bins, population_size, num_generations)
     best_index = 0
     best_configuration = []
     best_fitness = 0
-    for generation in 1:num_generations
+    for _ in 1:num_generations
         configurations = [next_fit(deepcopy(bins), configuration, 1) for configuration in population]
         fitnesses = [get_fitness(configuration) for configuration in configurations]
         bindex = argmax(fitnesses)
@@ -207,11 +174,11 @@ function genetic_algorithm(items, bins, population_size, num_generations)
                 push!(intermediate_population, child)
             end
         end
+        # solution may improve if population is built from old population and offspring
+        # using elitism policy
         population = intermediate_population
         # population = elitism(intermediate_population, population)
     end
-
-    
     return best_configuration, length(best_configuration)
 end
 
@@ -230,38 +197,29 @@ function place_initial_items(items, capacity)
     return bins, remaining_items
 end
 
-function roulette_wheel_selection(fitnesses)
-    # normalize the fitnesses to probabilities
+function roulette_wheel_selection(fitnesses::Vector{Float64})
+    # Compute total fitness
     total_fitness = sum(fitnesses)
-    probabilities = fitnesses ./ total_fitness
-    
-    # create a cumulative probability distribution
-    cum_probs = cumsum(probabilities)
-    
-    # select two parents using the roulette wheel
-    parents = []
-    for i in 1:2
-        r = rand()
-        for j in eachindex(cum_probs)
-            if r <= cum_probs[j]
-                push!(parents, j)
-                break
-            end
-        end
+
+    # Compute selection probabilities
+    selection_probs = fitnesses / total_fitness
+
+    # Compute cumulative probabilities
+    cum_probs = cumsum(selection_probs)
+
+    # Select two parents using roulette-wheel selection
+    parent1 = -1
+    parent2 = -1
+    while parent1 == parent2
+        parent1 = searchsortedfirst(cum_probs, rand())
+        parent2 = searchsortedfirst(cum_probs, rand())
     end
-    
-    return parents
+
+    return parent1, parent2
 end
 
-function repr(bin::Bin)
-    println("Bin contents:")
-    for item in bin.items
-        println(item.id, ": ", item.size)
-    end
-end
-
-
-function first_fit(bins, items, capacity)
+function first_fit(items, capacity)
+    bins = [Bin(capacity, [])]
     for item in items
         pushed = false
         for bin in bins
@@ -277,30 +235,32 @@ function first_fit(bins, items, capacity)
     return length(bins)
 end
 
-# function first_fit_decreasing(bins, items, capacity)
-#     sizes = [item.size for item in items]
-#     p = sortperm(sizes)
-
-#     sorted_items = sort(items, by=i->i.size)
-#     return first_fit(bins, sorted_items, capacity)
-# end
+function first_fit_decreasing(items, capacity)
+    sort!(items, by=i->i.size, rev=true)
+    return first_fit(items, capacity)
+end
 
 BIN_CAPACITY = 1
+MAX_ITEM_SIZE = 1
+NUM_ITEMS = 50
 
-items = generate_items(100, 1)
+NUM_GENERATIONS = 200
+POPULATION_SIZE = 100
+
+items = generate_items(NUM_ITEMS)
 bins, remaining_items = place_initial_items(items, BIN_CAPACITY)
 
-# print(length(bins))
-if length(items) == 0
+if length(remaining_items) == 0
     for bin in bins
         repr(bin)
     end
     println("number of bins used: ", length(bins))
 else
+    best_configuration, num_bins = genetic_algorithm(remaining_items, bins, POPULATION_SIZE, NUM_GENERATIONS)
     println("GENETIC ALGORITHM SOLUTION")
-    best_configuration, num_bins = genetic_algorithm(remaining_items, bins, 30, 100)
     println("number of bins used: ", num_bins)
     println("FIRST FIT SOLUTION")
-    println("number of bins used: ", first_fit(bins, remaining_items, 1))
-
+    println("number of bins used: ", first_fit(items, BIN_CAPACITY))
+    println("FIRST FIT DECREASING SOLUTION")
+    println("number of bins used: ", first_fit_decreasing(items, BIN_CAPACITY))
 end
